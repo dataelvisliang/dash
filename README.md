@@ -10,7 +10,7 @@ A self-learning data agent inspired by [OpenAI's internal data agent](https://op
 | **2. Human Annotations** | Business rules, gotchas | `knowledge/business/*.json` |
 | **3. Query Patterns** | Validated SQL | `knowledge/queries/*.sql` |
 | **4. Institutional Knowledge** | External context | MCP (optional) |
-| **5. Learnings** | Discovered patterns | Custom tools + Knowledge base |
+| **5. Memory** | Discovered patterns | Agno's `LearningMachine` |
 | **6. Runtime Context** | Live schema inspection | `introspect_schema` tool |
 
 Plus **agentic memory** for user preferences.
@@ -51,20 +51,54 @@ railway login
 ./scripts/railway_up.sh
 ```
 
-## Add Your Own Data
+## Add Your Own Knowledge
 
-### 1. Table metadata (`knowledge/tables/my_table.json`)
+Knowledge files go in `knowledge/` with three subdirectories:
+
+```
+knowledge/
+├── tables/      # Table metadata (JSON)
+├── queries/     # Validated SQL patterns (SQL)
+└── business/    # Business rules & metrics (JSON)
+```
+
+### 1. Table Metadata (`knowledge/tables/*.json`)
+
+Describe each table's purpose, columns, and data quirks:
 
 ```json
 {
   "table_name": "users",
   "table_description": "User accounts",
   "use_cases": ["User lookup", "Activity analysis"],
-  "data_quality_notes": ["Email stored lowercase"]
+  "data_quality_notes": ["Email stored lowercase", "created_at is UTC"]
 }
 ```
 
-### 2. Business rules (`knowledge/business/my_rules.json`)
+### 2. Query Patterns (`knowledge/queries/*.sql`)
+
+Add validated queries the agent can learn from. Use XML-style tags:
+
+```sql
+-- <query name>active_users_by_month</query name>
+-- <query description>
+-- Count active users per month.
+-- Handles: timezone conversion, activity definition
+-- </query description>
+-- <query>
+SELECT
+    DATE_TRUNC('month', last_login) AS month,
+    COUNT(*) AS active_users
+FROM users
+WHERE last_login > NOW() - INTERVAL '30 days'
+GROUP BY 1
+ORDER BY 1 DESC
+-- </query>
+```
+
+### 3. Business Rules (`knowledge/business/*.json`)
+
+Define metrics and document common gotchas:
 
 ```json
 {
@@ -73,17 +107,22 @@ railway login
 }
 ```
 
-### 3. Load data
+### Load Knowledge
+
+After adding or updating files, load them into the vector database:
 
 ```sh
-docker exec -it data-agent-api python -c "
-import pandas as pd
-from sqlalchemy import create_engine
-from db import db_url
-df = pd.read_csv('/path/to/data.csv')
-df.to_sql('my_table', create_engine(db_url), if_exists='replace', index=False)
-"
+# Docker
+docker exec -it data-agent-api python -m da.scripts.load_knowledge
+
+# Local
+python -m da.scripts.load_knowledge
+
+# Fresh start (drop and reload all)
+python -m da.scripts.load_knowledge --recreate
 ```
+
+Re-running without `--recreate` will upsert (update existing documents). Use `--recreate` to drop all existing knowledge and reload from scratch.
 
 ## Local Development
 
